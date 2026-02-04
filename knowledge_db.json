@@ -1,0 +1,30 @@
+[
+  {
+    "id": 1,
+    "type": "protein_workflow",
+    "tags": ["蛋白质", "结构预测", "3D可视化", "PDB"],
+    "content": "用户输入蛋白质序列（单条或多条）→ 验证序列有效性 → 调用 API 预测结构 → 展示 3D 结构、氨基酸分布和 Ramachandran 图 → 提供 PDB 文件下载",
+    "embedding": null
+  },
+  {
+    "id": 2,
+    "type": "fragment",
+    "tags": ["验证", "序列有效性"],
+    "content": "序列有效性验证步骤：检查氨基酸字符是否有效，去除非法字符，验证序列长度",
+    "embedding": null
+  },
+  {
+    "id": 3,
+    "type": "fragment",
+    "tags": ["API调用", "结构预测"],
+    "content": "使用AlphaFold2或RoseTTAFold API进行蛋白质结构预测",
+    "embedding": null
+  },
+  {
+    "id": 4,
+    "type": "other_workflow",
+    "tags": ["基因分析", "序列比对"],
+    "content": "基因序列分析流程：输入DNA序列 → BLAST比对 → 基因注释 → 功能预测",
+    "embedding": null
+  }
+]
