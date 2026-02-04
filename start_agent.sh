@@ -1,49 +1,45 @@
 #!/bin/bash
 echo "=== 科研流程智能体启动脚本 ==="
-echo "使用DeepSeek API版本"
-
-# 检查Python环境
-echo "检查Python环境..."
-if ! command -v python &> /dev/null; then
-    echo "❌ Python未安装，请先安装Python 3.8+"
-    exit 1
-fi
 
 # 检查依赖
-echo "检查依赖包..."
-python -c "import sentence_transformers, sklearn, requests, numpy, autogen" 2>/dev/null
-if [ $? -ne 0 ]; then
-    echo "⚠️  缺少依赖包，正在安装..."
-    pip install -r requirements.txt 2>/dev/null || {
-        echo "❌ 依赖安装失败，请手动安装"
-        echo "   运行: pip install sentence-transformers scikit-learn numpy requests pyautogen"
-        exit 1
-    }
-fi
-
-# 检查嵌入模型
-echo "检查嵌入模型..."
-if [ ! -d "./models/all-MiniLM-L6-v2" ]; then
-    echo "📥 下载嵌入模型..."
-    python download_model.py
-    if [ $? -ne 0 ]; then
-        echo "❌ 模型下载失败，尝试使用国内镜像..."
-        export HF_ENDPOINT=https://hf-mirror.com
-        python download_model.py
-    fi
-fi
-
-# 启动智能体
-echo "🚀 启动科研流程智能体..."
-echo "使用模型: DeepSeek Chat"
-echo "API配置检查..."
-python check_config.py
-
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "正在启动主程序..."
-    python main.py
-else
-    echo "❌ 环境检查失败，请修复后重试"
+echo "检查Python环境..."
+if ! command -v python3 &> /dev/null; then
+    echo "❌ Python3未安装，请先安装Python 3.8+"
     exit 1
 fi
+
+# 检查必要目录
+echo "检查必要目录..."
+mkdir -p ./data
+mkdir -p ./models
+
+# 检查知识库文件
+if [ ! -f "./data/knowledge_db.json" ]; then
+    echo "📝 创建默认知识库..."
+    echo '[
+        {
+            "id": 1,
+            "type": "protein_workflow",
+            "tags": ["蛋白质", "结构预测", "3D可视化", "PDB"],
+            "content": "用户输入蛋白质序列（单条或多条）→ 验证序列有效性 → 调用 API 预测结构 → 展示 3D 结构、氨基酸分布和 Ramachandran 图 → 提供 PDB 文件下载"
+        }
+    ]' > ./data/knowledge_db.json
+fi
+
+# 检查配置文件
+if [ ! -f "config.py" ]; then
+    echo "❌ config.py 文件不存在"
+    exit 1
+fi
+
+# 检查主文件
+if [ ! -f "main.py" ]; then
+    echo "❌ main.py 文件不存在"
+    exit 1
+fi
+
+echo "🚀 启动科研流程智能体..."
+echo "使用模型: DeepSeek + 百度文心千帆Embedding"
+echo "-" * 50
+
+python3 main.py

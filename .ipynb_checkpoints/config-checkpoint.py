@@ -2,25 +2,32 @@ import os
 from typing import Dict, Any, List
 
 class Config:
-    """配置参数类 - 优化版（移除Ollama）"""
+    """配置参数类 - 优化版（使用百度API + DeepSeek）"""
     
-    # DeepSeek配置（主模型）
+    # DeepSeek配置（主LLM）
     DEEPSEEK_API_KEY = "sk-c80fe2e104e84e48ad4882cf784e0f70"  # 你的API密钥
     DEEPSEEK_MODEL = "deepseek-chat"  # DeepSeek聊天模型
     DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
+    
+    # 百度文心千帆Embedding API配置
+    BAIDU_API_KEY = "bce-v3/ALTAK-iT64za6LG6HJEhmTVtXjw/36d5a254fb9faf77f2bbba7bdf3178db0cf95048"
+    BAIDU_SECRET_KEY = ""  # 百度可能需要secret_key，如果不需要就留空
+    
+    # Embedding配置
+    EMBEDDING_API_PROVIDER = "baidu"  # 使用百度API
+    EMBEDDING_MODEL = "embedding-v1"  # 百度文心千帆的embedding模型
     
     # 模型配置参数
     MODEL_CONFIG = {
         "temperature": 0.7,          # 创造性程度
         "top_p": 0.9,               # 核采样参数
-        "max_tokens": 1024,         # 最大生成token数
+        "max_tokens": 1500,         # 最大生成token数
         "frequency_penalty": 0.1,   # 频率惩罚
         "presence_penalty": 0.1,    # 存在惩罚
     }
     
     # 向量数据库配置
     VECTOR_DB_PATH = "./data/vector_db"
-    EMBEDDING_MODEL = "all-MiniLM-L6-v2"
     
     # 对话配置
     MAX_INTERACTION_COUNT = 5
