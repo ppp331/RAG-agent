@@ -17,13 +17,13 @@ class Config:
     EMBEDDING_API_PROVIDER = "baidu"  # 使用百度API
     EMBEDDING_MODEL = "embedding-v1"  # 百度文心千帆的embedding模型
     
-    # 模型配置参数
+    # 模型配置参数 - 降低温度减少幻觉
     MODEL_CONFIG = {
-        "temperature": 0.7,          # 创造性程度
-        "top_p": 0.9,               # 核采样参数
-        "max_tokens": 1500,         # 最大生成token数
-        "frequency_penalty": 0.1,   # 频率惩罚
-        "presence_penalty": 0.1,    # 存在惩罚
+        "temperature": 0.1,          # 降低创造性，减少幻觉
+        "top_p": 0.7,                # 降低多样性
+        "max_tokens": 800,            # 减少最大token数
+        "frequency_penalty": 0.0,     # 关闭频率惩罚
+        "presence_penalty": 0.0,      # 关闭存在惩罚
     }
     
     # 向量数据库配置
@@ -31,30 +31,30 @@ class Config:
     
     # 对话配置
     MAX_INTERACTION_COUNT = 5
-    MAX_TOKEN_LIMIT = 4096
+    MAX_TOKEN_LIMIT = 2048  # 降低限制
     KNOWLEDGE_DB_PATH = "./data/knowledge_db.json"
     
-    # Agent配置
+    # Agent配置 - 简化版
     AGENT_CONFIGS = {
         "research_assistant": {
             "name": "Research_Assistant",
-            "system_message": "你是一个专业的科研流程专家，擅长蛋白质结构分析和生物信息学工作流程设计。请基于检索到的知识和用户需求，设计合理的工作流程。",
-            "description": "主要负责科研流程的设计和优化"
+            "system_message": "你是一个流程整理工具，只整理已有知识，不添加新内容。",
+            "description": "流程整理工具"
         },
         "knowledge_retriever": {
             "name": "Knowledge_Retriever", 
-            "system_message": "你负责从知识库中检索相关信息，提供给研究助手使用。",
+            "system_message": "你是一个知识检索工具，只返回原始知识。",
             "description": "知识检索工具"
         },
         "workflow_validator": {
             "name": "Workflow_Validator",
-            "system_message": "你负责验证工作流程的合理性和完整性，检查是否有遗漏步骤。",
+            "system_message": "你是一个流程验证工具，只检查完整性。",
             "description": "流程验证工具"
         },
         "deepseek_agent": {
             "name": "DeepSeek_Agent",
-            "system_message": "你是一个专业的生物信息学专家，使用DeepSeek模型提供专业分析、回答用户问题并生成详细的工作流程。",
-            "description": "使用DeepSeek模型进行核心分析和回答"
+            "system_message": "你是一个回答生成工具，严格基于验证通过的流程生成回答。",
+            "description": "回答生成工具"
         }
     }
     

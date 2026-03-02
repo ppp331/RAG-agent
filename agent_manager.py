@@ -7,7 +7,7 @@ from autogen import AssistantAgent, UserProxyAgent, GroupChat, GroupChatManager
 from config import Config
 
 class AgentManager:
-    """智能体管理类 - 最小化修复，保留所有原有功能"""
+    """智能体管理类 - 简化版，减少幻觉"""
     
     def __init__(self, knowledge_base):
         self.config = Config()
@@ -26,8 +26,19 @@ class AgentManager:
         text = ''.join(char for char in text if not (0xD800 <= ord(char) <= 0xDFFF))
         return text
     
+    def _is_bioinformatics_query(self, query: str) -> bool:
+        """判断是否与生信相关"""
+        bio_keywords = [
+            "蛋白质", "序列", "基因", "DNA", "RNA", "氨基酸", 
+            "结构预测", "比对", "blast", "pdb", "结构",
+            "protein", "sequence", "gene", "alignment", "蛋白质流程",
+            "预测", "分析", "流程", "步骤", "方法", "工具"
+        ]
+        query_lower = query.lower()
+        return any(keyword in query_lower for keyword in bio_keywords)
+    
     def _init_autogen_agents(self):
-        """初始化AutoGen代理结构 - 只修复配置格式，不改变架构"""
+        """初始化AutoGen代理结构 - 简化版"""
         
         # DeepSeek API配置
         base_config = {
@@ -37,15 +48,15 @@ class AgentManager:
             "api_type": "openai",
         }
         
-        # 共享的llm配置
+        # 共享的llm配置 - 降低温度减少创造性
         deepseek_config = {
             "config_list": [base_config],
-            "temperature": self.config.MODEL_CONFIG["temperature"],
+            "temperature": 0.1,  # 降低温度，减少幻觉
             "timeout": 120,
-            "max_tokens": self.config.MODEL_CONFIG["max_tokens"],
+            "max_tokens": 800,  # 限制输出长度
         }
         
-        # 用户代理 - 保持原有逻辑
+        # 用户代理
         self.user_proxy = UserProxyAgent(
             name="User_Proxy",
             human_input_mode="NEVER",
@@ -54,35 +65,34 @@ class AgentManager:
             system_message="你是用户的代理，只负责提出用户的问题。不要自己回答问题。",
         )
         
-        # 流程协调器 - 保持原有逻辑
+        # 流程协调器 - 改为只做简单的转发，不生成内容
         self.workflow_coordinator = AssistantAgent(
             name="Workflow_Coordinator",
-            system_message="""你是流程协调器，负责管理多智能体协作流程。
-你的职责：
-1. 接收用户问题
-2. 协调知识检索、流程设计、验证和最终整合
-3. 确保流程按顺序进行
-4. 在流程结束时说"【流程完成】"
+            system_message="""你是一个流程协调器。你的唯一任务是按顺序调用其他智能体，每次只说一句话：
+1. 首先说："Knowledge_Retriever，请检索相关知识。"
+2. 然后说："Research_Assistant，请整理流程。"
+3. 然后说："Workflow_Validator，请验证完整性。"
+4. 最后说："DeepSeek_Agent，请生成最终回答。"
 
-具体步骤：
-1. 首先指导知识检索
-2. 然后指导流程设计
-3. 接着指导流程验证
-4. 最后指导最终整合
-5. 流程完成后说"【流程完成】"并结束""",
+不要添加任何其他内容，不要自己回答问题。""",
             llm_config=deepseek_config,
         )
         
-        # 知识检索器 - 关键修复：修正函数调用配置格式
+        # 知识检索器 - 只返回原始知识
         self.knowledge_retriever = AssistantAgent(
             name="Knowledge_Retriever",
-            system_message="""你是知识检索专家。当流程协调器要求检索知识时：
-1. 调用retrieve_knowledge工具函数获取相关知识
-2. 分析检索结果
-3. 提供知识总结
-4. 完成后说"【知识检索完成】"以便流程继续""",
+            system_message="""你是一个知识检索工具。你的任务：
+1. 调用retrieve_knowledge工具获取相关知识
+2. 只返回检索到的原始内容，不要添加任何解释
+3. 如果没有找到相关知识，返回"【无相关知识】"
+4. 完成后说"【检索完成】"
+
+输出格式示例：
+- 用户输入蛋白质序列 → 验证序列有效性 → 调用 API 预测结构 → 展示 3D 结构、氨基酸分布和 Ramachandran 图 → 提供 PDB 文件下载
+- 序列有效性验证步骤：检查氨基酸字符是否有效，去除非法字符，验证序列长度
+【检索完成】""",
             llm_config={
-                "config_list": [base_config],  # 只包含base_config
+                "config_list": [base_config],
                 "functions": [
                     {
                         "name": "retrieve_knowledge",
@@ -99,7 +109,6 @@ class AgentManager:
                         }
                     }
                 ],
-                # 修复：移除可能导致验证错误的参数
                 "temperature": 0.1,
                 "max_tokens": 500,
             },
@@ -108,281 +117,331 @@ class AgentManager:
             },
         )
         
-        # 研究助手 - 保持原有逻辑
+        # 研究助手 - 只整理格式，不添加内容
         self.research_assistant = AssistantAgent(
             name="Research_Assistant",
-            system_message="""你是科研流程设计专家。基于检索到的知识，设计详细的工作流程。
-要求：
-1. 结构清晰，使用Markdown格式
-2. 步骤详细具体
-3. 包含必要的工具和方法推荐
-4. 完成后说"【设计完成】"以便流程继续""",
+            system_message="""你是一个流程整理工具。你的任务：
+1. 接收Knowledge_Retriever返回的原始知识
+2. 只整理格式为Markdown列表，不添加任何新步骤
+3. 如果有多条知识，按顺序列出
+4. 完成后说"【整理完成】"
+
+输出格式示例：
+### 蛋白质结构预测流程
+1. 验证序列有效性
+   - 检查氨基酸字符是否有效
+   - 去除非法字符
+   - 验证序列长度
+2. 调用API预测结构
+   - 可使用AlphaFold2或RoseTTAFold
+3. 展示结果
+   - 3D结构可视化
+   - 氨基酸分布图
+   - Ramachandran图
+4. 提供PDB文件下载
+【整理完成】""",
             llm_config=deepseek_config,
         )
         
-        # 工作流程验证器 - 保持原有逻辑
+        # 工作流程验证器 - 只检查完整性
         self.workflow_validator = AssistantAgent(
             name="Workflow_Validator",
-            system_message="""你是流程验证专家。请检查工作流程的完整性和合理性。
-检查要点：
-1. 是否有遗漏的关键步骤
-2. 逻辑顺序是否合理
-3. 推荐工具是否合适
-4. 技术细节是否正确
-请提供具体的改进建议。
-完成后说"【验证完成】"以便流程继续""",
+            system_message="""你是一个流程验证工具。你的任务：
+1. 检查整理后的流程是否完整
+2. 如果发现遗漏，只指出遗漏了什么
+3. 不要生成新的流程内容
+4. 如果完整，说"【验证通过】"，否则说"【验证失败：缺少XXX】"
+
+输出格式示例：
+【验证通过】
+或
+【验证失败：缺少"验证序列长度"步骤】""",
             llm_config=deepseek_config,
         )
         
-        # DeepSeek代理 - 保持原有逻辑
+        # DeepSeek代理 - 严格基于验证通过的流程
         self.deepseek_agent = AssistantAgent(
             name="DeepSeek_Agent",
-            system_message="""你是最终整合专家。请基于所有讨论，生成最终的完整回答。
-要求：
-1. 整合所有有用信息
-2. 给出最专业、最完整的最终回答
-3. 结构清晰，使用Markdown格式
-4. 包含具体步骤、工具、注意事项
-5. 直接面向用户，不要提及内部讨论过程
-6. 完成后说"【最终回答】"以便流程结束""",
+            system_message="""你是一个回答生成工具。你的任务：
+1. 接收验证通过的流程
+2. 严格基于该流程生成最终回答
+3. 可以添加必要的解释说明，但不能添加新步骤
+4. 如果检索结果为"【无相关知识】"，回答"抱歉，我无法回答这个问题"
+5. 如果验证失败，回答"抱歉，知识库中的流程不完整"
+
+约束：
+- 最终回答必须完全包含验证通过的流程中的所有步骤
+- 不得添加流程中没有的步骤
+- 回答要简洁清晰，直接列出步骤即可
+
+输出格式示例：
+根据知识库，蛋白质结构预测的流程如下：
+
+1. **序列验证**：检查氨基酸字符有效性，去除非法字符，验证序列长度。
+2. **结构预测**：使用AlphaFold2或RoseTTAFold API进行预测。
+3. **结果展示**：生成3D结构可视化、氨基酸分布图和Ramachandran图。
+4. **文件下载**：提供PDB文件下载链接。""",
             llm_config=deepseek_config,
         )
         
-        # 创建组聊天 - 保持原有逻辑
+        # 创建组聊天 - 使用固定的发言顺序
         self.agents = [
-            self.user_proxy,           # 代表用户提出问题
-            self.workflow_coordinator, # 协调整个流程
-            self.knowledge_retriever,  # 检索知识
-            self.research_assistant,   # 设计流程
-            self.workflow_validator,   # 验证流程
-            self.deepseek_agent,       # 最终回答
+            self.user_proxy,
+            self.knowledge_retriever,  # 直接让知识检索器开始
+            self.research_assistant,
+            self.workflow_validator,
+            self.deepseek_agent,
         ]
         
-        self.group_chat = GroupChat(
-            agents=self.agents,
-            messages=[],
-            max_round=12,
-            speaker_selection_method="auto",
-            allow_repeat_speaker=False,
-            send_introductions=False,
-        )
-        
-        # GroupChat Manager - 保持原有逻辑
-        self.manager = GroupChatManager(
-            groupchat=self.group_chat,
-            llm_config={
-                "config_list": [base_config],
-                "temperature": 0.2,
-                "max_tokens": 300,
-            },
-            system_message="""你是多智能体协作管理器。请协调智能体协作。
-
-智能体及其职责：
-1. User_Proxy：代表用户提出初始问题
-2. Workflow_Coordinator：协调整个工作流程
-3. Knowledge_Retriever：检索相关知识
-4. Research_Assistant：设计工作流程
-5. Workflow_Validator：验证流程完整性
-6. DeepSeek_Agent：生成最终回答
-
-请确保对话有序进行。""",
-            human_input_mode="NEVER",
-        )
+        # 不再使用GroupChatManager的自动选择，而是手动控制
+        self.group_chat = None
+        self.manager = None
     
     def retrieve_knowledge_tool(self, query: str) -> str:
-        """知识检索工具函数 - 保持原有逻辑"""
+        """知识检索工具 - 只返回原始内容"""
         try:
+            # 先判断是否与生信相关
+            if not self._is_bioinformatics_query(query):
+                return "【无相关知识】\n【检索完成】"
+            
             clean_query = self._clean_text(query)
             print(f"🔍 正在检索知识: {clean_query[:50]}...")
             results = self.knowledge_base.retrieve_knowledge(clean_query, top_k=3)
             
-            if results:
-                response_lines = ["✅ **检索到的相关知识**"]
-                for i, item in enumerate(results, 1):
-                    content = self._clean_text(item['content'])
-                    similarity = item['similarity']
-                    response_lines.append(f"{i}. {content} (相关度: {similarity:.2f})")
-                response_lines.append("\n【知识检索完成】")
-                response = "\n".join(response_lines)
-                print(f"✅ 检索完成，找到 {len(results)} 条结果")
-                return response
-            else:
-                response = "⚠️ 未找到相关知识，请基于专业知识进行设计。\n【知识检索完成】"
+            if not results:
                 print("⚠️ 未找到相关知识")
-                return response
+                return "【无相关知识】\n【检索完成】"
+            
+            # 只返回原始内容，不加任何修饰
+            response_lines = []
+            for item in results:
+                content = self._clean_text(item['content'])
+                response_lines.append(f"- {content}")
+            
+            response_lines.append("【检索完成】")
+            print(f"✅ 检索完成，找到 {len(results)} 条结果")
+            return "\n".join(response_lines)
+            
         except Exception as e:
             print(f"❌ 检索失败: {e}")
-            return f"检索失败: {str(e)}\n【知识检索完成】"
+            return f"检索失败\n【检索完成】"
     
     def _typewriter_output(self, text: str, delay: float = 0.02) -> Generator[str, None, None]:
-        """打字机效果输出生成器 - 保持原有逻辑"""
+        """打字机效果输出生成器"""
         if not text:
             return
         
-        # 按段落处理
-        paragraphs = text.split('\n\n')
-        
-        for para_idx, paragraph in enumerate(paragraphs):
-            if not paragraph.strip():
-                yield '\n\n'
-                time.sleep(delay * 2)
-                continue
-            
-            lines = paragraph.split('\n')
-            for line_idx, line in enumerate(lines):
-                if line.strip():
-                    # 按字符输出
-                    for char in line:
-                        yield char
-                        time.sleep(delay)
-                else:
-                    yield '\n'
-                    time.sleep(delay * 1.5)
-                
-                if line_idx < len(lines) - 1:
-                    yield '\n'
-                    time.sleep(delay * 1)
-            
-            if para_idx < len(paragraphs) - 1:
-                yield '\n\n'
-                time.sleep(delay * 2.5)
+        for char in text:
+            yield char
+            time.sleep(delay)
     
-    def _execute_autogen_workflow(self, user_query: str) -> str:
-        """执行AutoGen工作流程 - 保持原有逻辑"""
-        print(f"\n🚀 启动AutoGen多智能体协作流程...")
+    def _execute_manual_workflow(self, user_query: str) -> str:
+        """手动执行工作流程 - 避免AutoGen的自动发言问题"""
+        print(f"\n🚀 启动手动控制的多智能体协作流程...")
         
-        # 清空历史消息
-        if hasattr(self, 'group_chat'):
-            self.group_chat.messages = []
+        # 存储各步骤的结果
+        knowledge_result = ""
+        organize_result = ""
+        validate_result = ""
         
+        # 步骤1: 知识检索
+        print("🤖 步骤1: Knowledge_Retriever 检索知识")
+        knowledge_result = self.retrieve_knowledge_tool(user_query)
+        print(f"   检索结果: {knowledge_result[:100]}...")
+        
+        # 如果无相关知识，直接返回
+        if "【无相关知识】" in knowledge_result:
+            return "抱歉，我无法回答这个问题（知识库中无相关信息）。"
+        
+        # 步骤2: 研究助手整理
+        print("🤖 步骤2: Research_Assistant 整理流程")
+        organize_result = self._call_research_assistant(knowledge_result)
+        print(f"   整理完成")
+        
+        # 步骤3: 验证器验证
+        print("🤖 步骤3: Workflow_Validator 验证完整性")
+        validate_result = self._call_workflow_validator(organize_result)
+        print(f"   验证结果: {validate_result}")
+        
+        # 步骤4: 生成最终回答
+        print("🤖 步骤4: DeepSeek_Agent 生成回答")
+        final_response = self._call_deepseek_agent(organize_result, validate_result)
+        
+        return final_response
+    
+    def _call_research_assistant(self, knowledge_text: str) -> str:
+        """调用研究助手整理流程"""
         try:
-            # User_Proxy发起对话
-            print(f"🤖 启动智能体协作...")
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.config.DEEPSEEK_API_KEY}"
+            }
             
-            chat_result = self.user_proxy.initiate_chat(
-                self.manager,
-                message=user_query,  # User_Proxy传递用户的问题
-                max_turns=12,
-                summary_method="last_msg",
+            prompt = f"""你是一个流程整理工具。请将以下知识整理为Markdown列表格式：
+
+{knowledge_text}
+
+要求：
+1. 只整理格式，不添加新步骤
+2. 使用Markdown列表
+3. 完成后说"【整理完成】"
+
+整理结果："""
+            
+            payload = {
+                "model": self.config.DEEPSEEK_MODEL,
+                "messages": [
+                    {"role": "system", "content": "你是一个流程整理工具，只整理已有知识，不添加新内容。"},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.1,
+                "max_tokens": 500
+            }
+            
+            response = requests.post(
+                f"{self.config.DEEPSEEK_BASE_URL}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=30
             )
             
-            # 提取最终回答
-            final_response = ""
-            
-            # 查找DeepSeek_Agent的最终回答
-            if hasattr(chat_result, 'chat_history') and chat_result.chat_history:
-                for msg in reversed(chat_result.chat_history):
-                    if isinstance(msg, dict):
-                        if msg.get("name") == "DeepSeek_Agent":
-                            content = msg.get("content", "")
-                            if content:
-                                final_response = content
-                                break
-                    elif hasattr(msg, 'name') and msg.name == "DeepSeek_Agent":
-                        if hasattr(msg, 'content'):
-                            final_response = msg.content
-                            break
-            
-            # 如果没找到，查找最后一个智能体的回答
-            if not final_response and hasattr(chat_result, 'chat_history') and chat_result.chat_history:
-                for msg in reversed(chat_result.chat_history):
-                    if isinstance(msg, dict):
-                        if msg.get("role") == "assistant" and msg.get("name") != "User_Proxy":
-                            content = msg.get("content", "")
-                            if content:
-                                final_response = content
-                                break
-                    elif hasattr(msg, 'role') and msg.role == "assistant":
-                        if hasattr(msg, 'name') and msg.name != "User_Proxy":
-                            if hasattr(msg, 'content'):
-                                final_response = msg.content
-                                break
-            
-            print(f"✅ AutoGen多智能体协作完成")
-            
-            # 清理标记
-            if final_response:
-                markers = ["【最终回答】", "【设计完成】", "【验证完成】", "【知识检索完成】", "【流程完成】"]
-                for marker in markers:
-                    final_response = final_response.replace(marker, "")
-                final_response = final_response.strip()
-            
-            return final_response or "未能生成完整回答"
-            
+            if response.status_code == 200:
+                result = response.json()["choices"][0]["message"]["content"]
+                return result
+            else:
+                return knowledge_text + "\n【整理完成】"
+                
         except Exception as e:
-            print(f"❌ AutoGen流程错误: {e}")
-            import traceback
-            traceback.print_exc()
-            return self._fallback_response(user_query)
+            print(f"❌ 研究助手调用失败: {e}")
+            return knowledge_text + "\n【整理完成】"
     
-    def _fallback_response(self, user_query: str) -> str:
-        """备用响应方案 - 保持原有逻辑"""
+    def _call_workflow_validator(self, workflow_text: str) -> str:
+        """调用验证器验证流程"""
         try:
-            # 先检索知识
-            print("使用备用方案...")
-            knowledge_results = self.knowledge_base.retrieve_knowledge(user_query, top_k=3)
-            knowledge_text = "【相关知识】\n"
-            if knowledge_results:
-                for item in knowledge_results:
-                    knowledge_text += f"- {item['content'][:150]}\n"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.config.DEEPSEEK_API_KEY}"
+            }
+            
+            prompt = f"""你是一个流程验证工具。请检查以下流程是否完整：
+
+{workflow_text}
+
+如果完整，只说"【验证通过】"
+如果不完整，说"【验证失败：缺少XXX】"
+不要添加其他内容。"""
+            
+            payload = {
+                "model": self.config.DEEPSEEK_MODEL,
+                "messages": [
+                    {"role": "system", "content": "你是一个流程验证工具，只检查完整性。"},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.1,
+                "max_tokens": 100
+            }
+            
+            response = requests.post(
+                f"{self.config.DEEPSEEK_BASE_URL}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                result = response.json()["choices"][0]["message"]["content"]
+                return result
+            else:
+                return "【验证通过】"
+                
+        except Exception as e:
+            print(f"❌ 验证器调用失败: {e}")
+            return "【验证通过】"
+    
+    def _call_deepseek_agent(self, workflow_text: str, validation_result: str) -> str:
+        """调用DeepSeek生成最终回答"""
+        try:
+            # 如果验证失败，返回错误信息
+            if "【验证失败" in validation_result:
+                return "抱歉，知识库中的流程不完整，无法生成回答。"
             
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.config.DEEPSEEK_API_KEY}"
             }
             
-            final_prompt = f"""{knowledge_text}
+            prompt = f"""你是一个回答生成工具。请基于以下流程生成最终回答：
 
-请作为专业的生物信息学专家，详细回答以下问题：
-问题：{user_query}
+{workflow_text}
 
 要求：
-1. 结构清晰，使用Markdown格式
-2. 步骤详细具体
-3. 包含必要的工具和方法推荐
-4. 给出完整的工作流程"""
+1. 严格基于上述流程
+2. 可以添加必要的解释说明
+3. 不要添加新步骤
+4. 回答要简洁清晰
+
+最终回答："""
             
-            final_payload = {
+            payload = {
                 "model": self.config.DEEPSEEK_MODEL,
                 "messages": [
-                    {"role": "system", "content": "你是专业的生物信息学专家。"},
-                    {"role": "user", "content": final_prompt}
+                    {"role": "system", "content": "你是一个回答生成工具，严格基于已有流程生成回答。"},
+                    {"role": "user", "content": prompt}
                 ],
-                "temperature": self.config.MODEL_CONFIG["temperature"],
-                "max_tokens": 2000
+                "temperature": 0.1,
+                "max_tokens": 800
             }
             
-            final_response = requests.post(
+            response = requests.post(
                 f"{self.config.DEEPSEEK_BASE_URL}/chat/completions",
                 headers=headers,
-                json=final_payload,
+                json=payload,
                 timeout=30
             )
             
-            if final_response.status_code == 200:
-                return final_response.json()["choices"][0]["message"]["content"]
+            if response.status_code == 200:
+                result = response.json()["choices"][0]["message"]["content"]
+                return result
             else:
-                return f"API错误: {final_response.status_code}"
+                return "抱歉，生成回答时出现错误。"
                 
         except Exception as e:
-            return f"备用方案失败: {str(e)}"
+            print(f"❌ DeepSeek调用失败: {e}")
+            return f"抱歉，生成回答时出现错误: {str(e)}"
     
     def generate_response_with_typewriter(self, user_query: str) -> Generator[str, None, str]:
-        """生成带有打字机效果的回复 - 保持原有逻辑"""
+        """生成带有打字机效果的回复"""
+        # 首先判断是否与生信相关
+        if not self._is_bioinformatics_query(user_query):
+            sorry_msg = "抱歉，我只能回答生物信息学相关的问题（如蛋白质结构预测、序列分析等）。"
+            for char in sorry_msg:
+                yield char
+                time.sleep(0.02)
+            return sorry_msg
+        
         if self.interaction_count >= self.config.MAX_INTERACTION_COUNT:
-            yield "已达到最大交互次数。请重新开始对话。\n"
-            return "已达到最大交互次数"
+            sorry_msg = "已达到最大交互次数。请重新开始对话。"
+            for char in sorry_msg:
+                yield char
+                time.sleep(0.02)
+            return sorry_msg
         
         print(f"\n🔍 用户查询: {user_query}")
         
-        # 使用AutoGen工作流程
-        print("🤖 启动AutoGen多智能体协作...")
-        final_response = self._execute_autogen_workflow(user_query)
+        # 使用手动控制的工作流程
+        print("🤖 启动手动控制的多智能体协作...")
+        final_response = self._execute_manual_workflow(user_query)
         
-        # 检查是否为空
+        # 检查回答
         if not final_response or len(final_response.strip()) < 20:
-            print("⚠️  回答过短，使用备用方案...")
-            final_response = self._fallback_response(user_query)
+            # 再次尝试检索知识库
+            results = self.knowledge_base.retrieve_knowledge(user_query, top_k=3)
+            if results:
+                final_response = "根据知识库，相关流程如下：\n\n"
+                for i, item in enumerate(results, 1):
+                    final_response += f"{i}. {item['content']}\n\n"
+            else:
+                final_response = "抱歉，知识库中没有找到相关的流程信息。"
         
         # 用打字机效果输出
         print("📝 输出回答: ")
@@ -400,14 +459,14 @@ class AgentManager:
         return full_response
     
     def generate_response(self, user_query: str) -> str:
-        """生成普通回复（兼容） - 保持原有逻辑"""
+        """生成普通回复（兼容）"""
         full_response = ""
         for chunk in self.generate_response_with_typewriter(user_query):
             full_response += chunk
         return full_response
     
     def _update_conversation_history(self, user_query: str, response: str):
-        """更新对话历史 - 保持原有逻辑"""
+        """更新对话历史"""
         clean_query = self._clean_text(user_query)
         clean_response = self._clean_text(response)
         
@@ -428,29 +487,26 @@ class AgentManager:
             self.conversation_history = self.conversation_history[-8:]
     
     def reset_conversation(self):
-        """重置对话 - 保持原有逻辑"""
+        """重置对话"""
         self.conversation_history = []
         self.interaction_count = 0
-        if hasattr(self, 'group_chat'):
-            self.group_chat.messages = []
         print("对话历史已重置")
     
     def update_model_config(self, **kwargs):
-        """更新模型配置 - 保持原有逻辑"""
-        # 更新配置
+        """更新模型配置"""
         if 'temperature' in kwargs:
             self.config.MODEL_CONFIG['temperature'] = kwargs['temperature']
         if 'top_p' in kwargs:
             self.config.MODEL_CONFIG['top_p'] = kwargs['top_p']
     
     def get_conversation_stats(self) -> Dict:
-        """获取对话统计 - 保持原有逻辑"""
+        """获取对话统计"""
         return {
             "interaction_count": self.interaction_count,
             "max_interactions": self.config.MAX_INTERACTION_COUNT,
             "history_length": len(self.conversation_history),
             "model": self.config.DEEPSEEK_MODEL,
-            "active_agents": [agent.name for agent in self.agents] if hasattr(self, 'agents') else [],
-            "workflow_mode": "AutoGen多智能体协作",
+            "active_agents": ["Knowledge_Retriever", "Research_Assistant", "Workflow_Validator", "DeepSeek_Agent"],
+            "workflow_mode": "手动控制多智能体协作",
             "output_mode": "打字机效果"
         }
